@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Secure Note-Taking Platform</title>
+  <style>
+    body { font-family: sans-serif; max-width: 950px; margin: 20px auto; padding: 0 15px; line-height: 1.5; }
+    section { border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; border-radius: 4px; }
+    h2, h3 { margin-top: 0; }
+    input, textarea, select, button { margin: 5px 0; padding: 7px; font-size: 14px; }
+    input, textarea { width: 100%; box-sizing: border-box; }
+    button { cursor: pointer; }
+    .row { display: flex; gap: 15px; }
+    .col { flex: 1; }
+    .card { border: 1px solid #ddd; padding: 10px; margin: 8px 0; background: #fafafa; }
+    .hidden { display: none; }
+    .badge { background: #333; color: #fff; padding: 2px 6px; font-size: 12px; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 10px; overflow-x: auto; font-size: 13px; }
+  </style>
+</head>
+<body>
+
+  <h1>Secure Note-Taking App (Backend Task)</h1>
+  <div id="statusMsg" style="color: green; font-weight: bold; margin-bottom: 10px;"></div>
+
+  <!-- AUTH SECTION -->
+  <section id="authSection">
+    <div class="row">
+      <div class="col">
+        <h3>Register</h3>
+        <input type="text" id="regName" placeholder="Full Name" />
+        <input type="email" id="regEmail" placeholder="Email" />
+        <input type="password" id="regPass" placeholder="Password" />
+        <input type="text" id="regInterests" placeholder="Interests (comma separated: chess, reading)" />
+        <select id="regRole">
+          <option value="user">Role: User</option>
+          <option value="admin">Role: Admin</option>
+        </select>
+        <br />
+        <button onclick="register()">Register</button>
+      </div>
+
+      <div class="col">
+        <h3>Login</h3>
+        <input type="email" id="loginEmail" placeholder="Email" />
+        <input type="password" id="loginPass" placeholder="Password" />
+        <br />
+        <button onclick="login()">Login</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- DASHBOARD SECTION -->
+  <div id="dashboard" class="hidden">
+    <section>
+      <h3>Logged In Profile</h3>
+      <div id="profileInfo"></div>
+      <button onclick="logout()">Logout</button>
+    </section>
+
+    <!-- USER NOTES SECTION -->
+    <section>
+      <h3>My Notes (Create, Update, Delete & Paginated List)</h3>
+      <input type="hidden" id="editNoteId" />
+      <input type="text" id="noteTitle" placeholder="Note Title" />
+      <textarea id="noteContent" rows="3" placeholder="Note Content"></textarea>
+      <button onclick="saveNote()" id="saveNoteBtn">Create Note</button>
+      <button onclick="cancelEditNote()" id="cancelEditBtn" class="hidden">Cancel Edit</button>
+
+      <h4>My Notes List</h4>
+      <div id="myNotesList"></div>
+      <div>
+        <button onclick="changeNotePage(-1)">Prev</button>
+        <span id="notePageInfo">Page 1</span>
+        <button onclick="changeNotePage(1)">Next</button>
+      </div>
+    </section>
+
+    <!-- AGGREGATIONS & POSTS SECTION -->
+    <section>
+      <h3>Aggregation Tasks</h3>
+      <div class="row">
+        <div class="col hidden" id="scenario1Col">
+          <h4>Scenario 1: Users Grouped by Interests (Admin Only)</h4>
+          <button onclick="loadGroupedInterests()">Run Group By Interests Aggregation</button>
+          <pre id="interestsOutput">Click button to load...</pre>
+        </div>
+
+        <div class="col">
+          <h4>Scenario 2: User Posts ($lookup - Public)</h4>
+          <input type="text" id="postTitle" placeholder="Post Title" />
+          <textarea id="postBody" rows="2" placeholder="Post Body (Public)"></textarea>
+          <button onclick="createPost()">Create Public Post</button>
+          <hr />
+          <input type="text" id="lookupUserId" placeholder="Enter User ID to $lookup posts" />
+          <button onclick="lookupUserPosts()">Run $lookup Aggregation</button>
+          <pre id="postsOutput">Enter a User ID and click button...</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ADMIN ONLY SECTION -->
+    <section id="adminSection" class="hidden">
+      <h2>Admin Panel (Role: Admin Only)</h2>
+      
+      <div class="row">
+        <div class="col">
+          <h3>Manage Users (Add / Update)</h3>
+          <input type="hidden" id="adminEditUserId" />
+          <input type="text" id="adminUserName" placeholder="Name" />
+          <input type="email" id="adminUserEmail" placeholder="Email" />
+          <input type="password" id="adminUserPass" placeholder="Password (leave blank on edit to keep)" />
+          <input type="text" id="adminUserInterests" placeholder="Interests (comma separated)" />
+          <select id="adminUserRole">
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </select>
+          <br />
+          <button onclick="adminSaveUser()" id="adminSaveUserBtn">Add User</button>
+          <button onclick="adminCancelUserEdit()" id="adminCancelUserBtn" class="hidden">Cancel</button>
+
+          <h4>All Users (Paginated)</h4>
+          <div id="allUsersList"></div>
+          <button onclick="changeUserPage(-1)">Prev</button>
+          <span id="userPageInfo">Page 1</span>
+          <button onclick="changeUserPage(1)">Next</button>
+        </div>
+
+        <div class="col">
+          <h3>All Users' Notes (Paginated)</h3>
+          <button onclick="loadAllNotes()">Refresh All Notes</button>
+          <div id="allNotesList"></div>
+          <button onclick="changeAllNotePage(-1)">Prev</button>
+          <span id="allNotePageInfo">Page 1</span>
+          <button onclick="changeAllNotePage(1)">Next</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // Connected directly to your live Render Backend API (and localhost fallback)
+    const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      ? 'http://localhost:5000/api'
+      : 'https://secure-note-backend-amae.onrender.com/api';
+
+    let token = localStorage.getItem('token') || '';
+    let currentUser = JSON.parse(localStorage.getItem('user') || 'null');
+
+    let notePage = 1;
+    let userPage = 1;
+    let allNotePage = 1;
+    const LIMIT = 5;
+
+    function showStatus(msg, isError = false) {
+      const el = document.getElementById('statusMsg');
+      el.style.color = isError ? 'red' : 'green';
+      el.innerText = msg;
+      setTimeout(() => (el.innerText = ''), 4000);
+    }
+
+    function headers() {
+      return {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      };
+    }
+
+    async function register() {
+      const name = document.getElementById('regName').value;
+      const email = document.getElementById('regEmail').value;
+      const password = document.getElementById('regPass').value;
+      const role = document.getElementById('regRole').value;
+      const interests = document.getElementById('regInterests').value
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      const res = await fetch(`${API}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password, role, interests }),
+      });
+      const data = await res.json();
+      if (!res.ok) return showStatus(data.message, true);
+
+      saveSession(data);
+    }
+
+    async function login() {
+      const email = document.getElementById('loginEmail').value;
+      const password = document.getElementById('loginPass').value;
+
+      const res = await fetch(`${API}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) return showStatus(data.message, true);
+
+      saveSession(data);
+    }
+
+    function saveSession(data) {
+      token = data.token;
+      currentUser = data;
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(currentUser));
+      initApp();
+      showStatus('Logged in successfully!');
+    }
+
+    function logout() {
+      token = '';
+      currentUser = null;
+      localStorage.clear();
+      window.location.reload();
+    }
+
+    async function loadMyNotes() {
+      const res = await fetch(`${API}/notes?page=${notePage}&limit=${LIMIT}`, { headers: headers() });
+      const data = await res.json();
+      if (!res.ok) return;
+
+      document.getElementById('notePageInfo').innerText = `Page ${data.page} of ${data.totalPages || 1} (Total: ${data.totalNotes})`;
+      const container = document.getElementById('myNotesList');
+      container.innerHTML = data.notes.map(n => `
+        <div class="card">
+          <strong>${n.title}</strong>
+          <p style="margin: 4px 0;">${n.content}</p>
+          <button onclick="editNote('${n._id}', '${n.title.replace(/'/g, "\\'")}', '${n.content.replace(/'/g, "\\'")}')">Edit</button>
+          <button onclick="deleteNote('${n._id}')">Delete</button>
+        </div>
+      `).join('') || '<p>No notes found.</p>';
+    }
+
+    async function saveNote() {
+      const id = document.getElementById('editNoteId').value;
+      const title = document.getElementById('noteTitle').value;
+      const content = document.getElementById('noteContent').value;
+
+      const url = id ? `${API}/notes/${id}` : `${API}/notes`;
+      const method = id ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: headers(),
+        body: JSON.stringify({ title, content }),
+      });
+      const data = await res.json();
+      if (!res.ok) return showStatus(data.message, true);
+
+      cancelEditNote();
+      loadMyNotes();
+      if (currentUser.role === 'admin') loadAllNotes();
+      showStatus(id ? 'Note updated!' : 'Note created!');
+    }
+
+    function editNote(id, title, content) {
+      document.getElementById('editNoteId').value = id;
+      document.getElementById('noteTitle').value = title;
+      document.getElementById('noteContent').value = content;
+      document.getElementById('saveNoteBtn').innerText = 'Update Note';
+      document.getElementById('cancelEditBtn').classList.remove('hidden');
+    }
+
+    function cancelEditNote() {
+      document.getElementById('editNoteId').value = '';
+      document.getElementById('noteTitle').value = '';
+      document.getElementById('noteContent').value = '';
+      document.getElementById('saveNoteBtn').innerText = 'Create Note';
+      document.getElementById('cancelEditBtn').classList.add('hidden');
+    }
+
+    async function deleteNote(id) {
+      const res = await fetch(`${API}/notes/${id}`, { method: 'DELETE', headers: headers() });
+      if (res.ok) {
+        loadMyNotes();
+        if (currentUser.role === 'admin') loadAllNotes();
+        showStatus('Note deleted!');
+      }
+    }
+
+    function changeNotePage(dir) {
+      if (notePage + dir < 1) return;
+      notePage += dir;
+      loadMyNotes();
+    }
+
+    async function loadGroupedInterests() {
+      const res = await fetch(`${API}/users/grouped-by-interests`, { headers: headers() });
+      const data = await res.json();
+      if (!res.ok) {
+        document.getElementById('interestsOutput').innerText = data.message;
+        return showStatus(data.message, true);
+      }
+      document.getElementById('interestsOutput').innerText = JSON.stringify(data, null, 2);
+    }
+
+    async function createPost() {
+      const title = document.getElementById('postTitle').value;
+      const body = document.getElementById('postBody').value;
+      const res = await fetch(`${API}/posts`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ title, body }),
+      });
+      const data = await res.json();
+      if (!res.ok) return showStatus(data.message, true);
+
+      document.getElementById('postTitle').value = '';
+      document.getElementById('postBody').value = '';
+      showStatus('Public Post created!');
+      lookupUserPosts();
+    }
+
+    async function lookupUserPosts() {
+      const userId = document.getElementById('lookupUserId').value.trim();
+      if (!userId) return showStatus('Please enter a User ID', true);
+      const res = await fetch(`${API}/posts/user/${userId}`);
+      const data = await res.json();
+      document.getElementById('postsOutput').innerText = JSON.stringify(data, null, 2);
+    }
+
+    async function loadAllUsers() {
+      const res = await fetch(`${API}/users?page=${userPage}&limit=${LIMIT}`, { headers: headers() });
+      const data = await res.json();
+      if (!res.ok) return;
+
+      document.getElementById('userPageInfo').innerText = `Page ${data.page} of ${data.totalPages || 1}`;
+      document.getElementById('allUsersList').innerHTML = data.users.map(u => `
+        <div class="card">
+          <strong>${u.name}</strong> (${u.email}) <span class="badge">${u.role}</span><br/>
+          <small>ID: ${u._id} | Interests: ${(u.interests || []).join(', ')}</small><br/>
+          <button onclick="adminPrepEditUser('${u._id}', '${u.name}', '${u.email}', '${u.role}', '${(u.interests || []).join(', ')}')">Edit</button>
+          <button onclick="adminDeleteUser('${u._id}')">Delete</button>
+        </div>
+      `).join('');
+    }
+
+    async function adminSaveUser() {
+      const id = document.getElementById('adminEditUserId').value;
+      const name = document.getElementById('adminUserName').value;
+      const email = document.getElementById('adminUserEmail').value;
+      const password = document.getElementById('adminUserPass').value;
+      const role = document.getElementById('adminUserRole').value;
+      const interests = document.getElementById('adminUserInterests').value
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      const url = id ? `${API}/users/${id}` : `${API}/users`;
+      const method = id ? 'PUT' : 'POST';
+      const payload = { name, email, role, interests };
+      if (password) payload.password = password;
+
+      const res = await fetch(url, {
+        method,
+        headers: headers(),
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) return showStatus(data.message, true);
+
+      adminCancelUserEdit();
+      loadAllUsers();
+      showStatus(id ? 'User updated!' : 'User added!');
+    }
+
+    function adminPrepEditUser(id, name, email, role, interests) {
+      document.getElementById('adminEditUserId').value = id;
+      document.getElementById('adminUserName').value = name;
+      document.getElementById('adminUserEmail').value = email;
+      document.getElementById('adminUserRole').value = role;
+      document.getElementById('adminUserInterests').value = interests;
+      document.getElementById('adminSaveUserBtn').innerText = 'Update Note';
+      document.getElementById('adminSaveUserBtn').innerText = 'Update User';
+      document.getElementById('adminCancelUserBtn').classList.remove('hidden');
+    }
+
+    function adminCancelUserEdit() {
+      document.getElementById('adminEditUserId').value = '';
+      document.getElementById('adminUserName').value = '';
+      document.getElementById('adminUserEmail').value = '';
+      document.getElementById('adminUserPass').value = '';
+      document.getElementById('adminUserInterests').value = '';
+      document.getElementById('adminSaveUserBtn').innerText = 'Add User';
+      document.getElementById('adminCancelUserBtn').classList.add('hidden');
+    }
+
+    async function adminDeleteUser(id) {
+      const res = await fetch(`${API}/users/${id}`, { method: 'DELETE', headers: headers() });
+      if (res.ok) {
+        loadAllUsers();
+        loadAllNotes();
+        showStatus('User deleted!');
+      }
+    }
+
+    function changeUserPage(dir) {
+      if (userPage + dir < 1) return;
+      userPage += dir;
+      loadAllUsers();
+    }
+
+    async function loadAllNotes() {
+      const res = await fetch(`${API}/notes/all?page=${allNotePage}&limit=${LIMIT}`, { headers: headers() });
+      const data = await res.json();
+      if (!res.ok) return;
+
+      document.getElementById('allNotePageInfo').innerText = `Page ${data.page} of ${data.totalPages || 1}`;
+      document.getElementById('allNotesList').innerHTML = data.notes.map(n => `
+        <div class="card">
+          <strong>${n.title}</strong> <small>by ${n.user ? n.user.email : 'Unknown'}</small>
+          <p style="margin: 4px 0;">${n.content}</p>
+        </div>
+      `).join('') || '<p>No notes found.</p>';
+    }
+
+    function changeAllNotePage(dir) {
+      if (allNotePage + dir < 1) return;
+      allNotePage += dir;
+      loadAllNotes();
+    }
+
+    function initApp() {
+      if (!token || !currentUser) return;
+      document.getElementById('authSection').classList.add('hidden');
+      document.getElementById('dashboard').classList.remove('hidden');
+
+      document.getElementById('profileInfo').innerHTML = `
+        <p><strong>ID:</strong> ${currentUser._id} | <strong>Name:</strong> ${currentUser.name} | 
+        <strong>Email:</strong> ${currentUser.email} | <strong>Role:</strong> <span class="badge">${currentUser.role}</span> | 
+        <strong>Interests:</strong> ${(currentUser.interests || []).join(', ')}</p>
+      `;
+      document.getElementById('lookupUserId').value = currentUser._id;
+
+      loadMyNotes();
+
+      if (currentUser.role === 'admin') {
+        document.getElementById('adminSection').classList.remove('hidden');
+        document.getElementById('scenario1Col').classList.remove('hidden');
+        loadAllUsers();
+        loadAllNotes();
+      } else {
+        document.getElementById('adminSection').classList.add('hidden');
+        document.getElementById('scenario1Col').classList.add('hidden');
+      }
+    }
+
+    initApp();
+  </script>
+</body>
+</html>
